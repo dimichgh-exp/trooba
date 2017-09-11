@@ -7,6 +7,10 @@ var defer = process && process.nextTick && process.nextTick.bind(process) ||
         setTimeout(fn, 0); // this is much slower then setImmediate or nextTick
     };
 
+function shouldDrop(message) {
+    return message.session && message.session.closed;
+}
+
 /**
  * Assigns transport to the client pipeline
 */
@@ -129,6 +133,9 @@ module.exports.onDrop = function onDrop(message) {
 
 PipePoint.prototype = {
     send: function send$(message) {
+        if (shouldDrop(message)) {
+            return;
+        }
         message.context = message.context || this.context;
         if (!message.context || !message.context.$inited) {
             throw new Error('The context has not been initialized, make sure you use pipe.create()');
@@ -264,6 +271,10 @@ PipePoint.prototype = {
     },
 
     process: function process$(message) {
+        if (shouldDrop(message)) {
+            return;
+        }
+
         var point = this;
 
         // get the hooks
@@ -448,7 +459,8 @@ PipePoint.prototype = {
         var point = this.request(request);
         var writeStream = createWriteStream({
             channel: point,
-            flow: Types.REQUEST
+            flow: Types.REQUEST,
+            session: this.context.$requestSession
         });
 
         this._exposePipeHooks(point, writeStream);
@@ -458,6 +470,10 @@ PipePoint.prototype = {
 
     request: function request$(request, callback) {
         var point = this;
+        if (this.context.$requestSession) {
+            this.context.$requestSession.closed = true;
+        }
+        this.context.$requestSession = {}; // new session
         this.resume();
 
         function sendRequest() {
@@ -490,6 +506,12 @@ PipePoint.prototype = {
 
     respond: function respond$(response) {
         var point = this;
+
+        if (this.context.$responseSession) {
+            this.context.$responseSession.closed = true;
+        }
+        this.context.$responseSession = {};
+
         this.resume();
 
         function sendResponse() {
@@ -512,12 +534,13 @@ PipePoint.prototype = {
         this.context.$responseStream = true;
         var point = this.respond(response);
 
-        var steram = this.context.$responseStream = createWriteStream({
+        var stream = this.context.$responseStream = createWriteStream({
             channel: point,
-            flow: Types.RESPONSE
+            flow: Types.RESPONSE,
+            session: this.context.$responseSession
         });
-        this._exposePipeHooks(point, steram);
-        return steram;
+        this._exposePipeHooks(point, stream);
+        return stream;
     },
 
     /*
@@ -606,6 +629,11 @@ function createWriteStream(ctx) {
     var channel = ctx.channel;
 
     function _write(data) {
+        // session can be closed by initiating new request/response
+        if (ctx.session.closed) {
+            return;
+        }
+
         if (channel._streamClosed) {
             throw new Error('The stream has been closed already');
         }
@@ -619,7 +647,8 @@ function createWriteStream(ctx) {
                 type: type,
                 flow: ctx.flow,
                 ref: data,
-                order: true
+                order: true,
+                session: ctx.session
             });
         });
     }

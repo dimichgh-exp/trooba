@@ -1,7 +1,8 @@
 # ChangeLog
 
 ## Next version
-* Added pipe.store to store properties specific to the given pipe point. This is useful to share things between different requests. One can store there objects that needs to be initialized only once. 
+* Fixed: should replace existing stream when new request/response is initiated.
+* Added pipe.store to store properties specific to the given pipe point. This is useful to share things between different requests. One can store there objects that needs to be initialized only once.
 * Added support for nested pipes/handlers that can be retuned by some pipe handlers instead of hooking to the main flow.
 
 ## v2.0.2
